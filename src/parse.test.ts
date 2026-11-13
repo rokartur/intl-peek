@@ -1,5 +1,10 @@
 import { expect, test } from 'bun:test'
-import { findKeyRefs, flag, flatten, keyBeingTyped, languageName, withDefaultFirst } from './parse'
+import { findKeyRefs, flag, flatten, jsonEntry, keyBeingTyped, languageName, withDefaultFirst } from './parse'
+
+test('jsonEntry nests missing groups at the indent of their depth', () => {
+	expect(jsonEntry(['number'], 'Numer "1"', '\t', 2)).toBe('"number": "Numer \\"1\\""')
+	expect(jsonEntry(['search', 'number'], 'Numer', '  ', 1)).toBe('"search": {\n    "number": "Numer"\n  }')
+})
 
 test('default locale goes first, matched by name, then by language', () => {
 	expect(withDefaultFirst(['pl', 'en', 'de'], 'pl')).toEqual(['pl', 'de', 'en'])

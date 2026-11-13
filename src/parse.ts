@@ -101,3 +101,11 @@ export function withDefaultFirst(locales: string[], displayLocale: string) {
 	if (!defaultLocale) return sorted
 	return [defaultLocale, ...sorted.filter((locale) => locale !== defaultLocale)]
 }
+
+// One JSON property for `path`, nesting new groups for its missing parents; `depth` is the indent level of its first line.
+export function jsonEntry(path: string[], value: string, unit: string, depth: number): string {
+	const name = JSON.stringify(path[0])
+	if (path.length === 1) return `${name}: ${JSON.stringify(value)}`
+	const child = jsonEntry(path.slice(1), value, unit, depth + 1)
+	return `${name}: {\n${unit.repeat(depth + 1)}${child}\n${unit.repeat(depth)}}`
+}

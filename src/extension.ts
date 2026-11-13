@@ -1,5 +1,5 @@
 import * as vscode from 'vscode'
-import { findKeyRefs, flag, flatten, keyBeingTyped, languageName, withDefaultFirst, type KeyRef } from './parse'
+import { findKeyRefs, flag, flatten, jsonEntry, keyBeingTyped, languageName, withDefaultFirst, type KeyRef } from './parse'
 
 const LANGUAGES = ['typescript', 'typescriptreact', 'javascript', 'javascriptreact']
 const AUTODETECT_GLOB = '**/{locales,messages}/**/*.json'
@@ -26,6 +26,7 @@ export function activate(context: vscode.ExtensionContext) {
 		progressChanged,
 		vscode.window.registerTreeDataProvider('intl-peek.progress', progressTree),
 		vscode.commands.registerCommand('intl-peek.openKey', openKey),
+		vscode.commands.registerCommand('intl-peek.addTranslation', addTranslation),
 		{ dispose: () => watcher.dispose() },
 		vscode.workspace.onDidChangeConfiguration((event) => {
 			if (!event.affectsConfiguration('intl-peek')) return
@@ -193,22 +194,77 @@ function provideDefinition(document: vscode.TextDocument, position: vscode.Posit
 	if (ref) return keyLocation(ref.key)
 }
 
-async function keyLocation(key: string) {
-	for (const locale of locales) {
-		const found = lookup(locale, key)
-		if (!found) continue
-		const path = found.file.prefix ? key.slice(found.file.prefix.length + 1) : key
-		const symbols = await vscode.commands.executeCommand<vscode.DocumentSymbol[] | undefined>(
-			'vscode.executeDocumentSymbolProvider',
-			found.file.uri,
-		)
-		const symbol = findSymbol(symbols ?? [], path.split('.'))
-		return new vscode.Location(found.file.uri, symbol?.selectionRange ?? new vscode.Position(0, 0))
-	}
+async function keyLocation(key: string, locale = locales.find((l) => lookup(l, key))) {
+	const file = locale && localeFile(key, locale)
+	if (!file) return
+	// A key missing from the file resolves to its deepest existing parent, where it would be added.
+	const { symbol } = await walkSymbols(file, key)
+	return new vscode.Location(file.uri, symbol?.selectionRange ?? new vscode.Position(0, 0))
 }
 
-async function openKey(key: string) {
-	const location = await keyLocation(key)
+function localeFile(key: string, locale: string) {
+	return [...files.values()].find((f) => f.locale === locale && (!f.prefix || key.startsWith(`${f.prefix}.`)))
+}
+
+// Follows `key` down the file's JSON symbols as far as it exists.
+async function walkSymbols(file: LocaleFile, key: string) {
+	const path = (file.prefix ? key.slice(file.prefix.length + 1) : key).split('.')
+	let children =
+		(await vscode.commands.executeCommand<vscode.DocumentSymbol[] | undefined>(
+			'vscode.executeDocumentSymbolProvider',
+			file.uri,
+		)) ?? []
+	let symbol: vscode.DocumentSymbol | undefined
+	let depth = 0
+	for (const name of path) {
+		const next = children.find((s) => s.name === name)
+		if (!next) break
+		symbol = next
+		children = next.children
+		depth++
+	}
+	return { path, symbol, children, depth }
+}
+
+// Writes the default locale's value into `locale`'s file and selects it for overtyping; the user saves.
+async function addTranslation({ key, locale }: { key: string; locale: string }) {
+	const file = localeFile(key, locale)
+	if (!file) return void vscode.window.showWarningMessage(`intl-peek: no ${locale} message file for ${key}`)
+	const document = await vscode.workspace.openTextDocument(file.uri)
+	const found = await walkSymbols(file, key)
+	if (found.depth < found.path.length && found.symbol && found.symbol.kind !== vscode.SymbolKind.Module) {
+		return void vscode.window.showWarningMessage(`intl-peek: ${found.symbol.name} in ${locale} is a value, not a group`)
+	}
+	const value = lookup(locales[0], key)?.value ?? ''
+	const { range, text } = translationEdit(document, found, value)
+	const edit = new vscode.WorkspaceEdit()
+	edit.replace(file.uri, range, text)
+	await vscode.workspace.applyEdit(edit)
+	const valueStart = document.offsetAt(range.start) + text.lastIndexOf(JSON.stringify(value)) + 1
+	const selection = new vscode.Range(
+		document.positionAt(valueStart),
+		document.positionAt(valueStart + JSON.stringify(value).length - 2),
+	)
+	await vscode.window.showTextDocument(document, { selection })
+}
+
+// Replaces an empty value, appends after the last property of the deepest existing group, or fills an empty group.
+function translationEdit(
+	document: vscode.TextDocument,
+	{ path, symbol, children, depth }: Awaited<ReturnType<typeof walkSymbols>>,
+	value: string,
+) {
+	const unit = /^[ \t]+/m.exec(document.getText())?.[0] ?? '\t'
+	if (depth === path.length) return { range: symbol!.range, text: jsonEntry(path.slice(-1), value, unit, depth) }
+	const entry = jsonEntry(path.slice(depth), value, unit, depth + 1)
+	const last = children.at(-1)
+	if (last) return { range: new vscode.Range(last.range.end, last.range.end), text: `,\n${unit.repeat(depth + 1)}${entry}` }
+	const brace = symbol ? symbol.range.end.translate(0, -1) : document.positionAt(document.getText().lastIndexOf('}'))
+	return { range: new vscode.Range(brace, brace), text: `\n${unit.repeat(depth + 1)}${entry}\n${unit.repeat(depth)}` }
+}
+
+async function openKey(key: string, locale?: string) {
+	const location = await keyLocation(key, locale)
 	if (location) await vscode.window.showTextDocument(location.uri, { selection: location.range })
 }
 
@@ -225,7 +281,11 @@ const progressTree: vscode.TreeDataProvider<ProgressNode> = {
 	getTreeItem({ locale, key }) {
 		if (key) {
 			const item = new vscode.TreeItem(key)
-			item.command = { title: 'Open key', command: 'intl-peek.openKey', arguments: [key] }
+			const value = lookup(locales[0], key)?.value ?? ''
+			item.description = shorten(value)
+			item.tooltip = value
+			item.contextValue = 'missingKey'
+			item.command = { title: 'Open key', command: 'intl-peek.openKey', arguments: [key, locale] }
 			return item
 		}
 		const total = referenceKeys().length
@@ -255,12 +315,6 @@ function referenceKeys() {
 // An empty string counts as untranslated.
 function missingKeys(locale: string) {
 	return referenceKeys().filter((key) => !lookup(locale, key)?.value)
-}
-
-function findSymbol(symbols: vscode.DocumentSymbol[], path: string[]): vscode.DocumentSymbol | undefined {
-	const symbol = symbols.find((s) => s.name === path[0])
-	if (!symbol || path.length === 1) return symbol
-	return findSymbol(symbol.children, path.slice(1))
 }
 
 function provideCompletionItems(document: vscode.TextDocument, position: vscode.Position) {

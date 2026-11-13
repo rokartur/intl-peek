@@ -23,6 +23,28 @@
 		"onLanguage:javascriptreact"
 	],
 	"contributes": {
+		"commands": [
+			{
+				"command": "intl-peek.addTranslation",
+				"title": "Add translation",
+				"icon": "$(add)"
+			}
+		],
+		"menus": {
+			"commandPalette": [
+				{
+					"command": "intl-peek.addTranslation",
+					"when": "false"
+				}
+			],
+			"view/item/context": [
+				{
+					"command": "intl-peek.addTranslation",
+					"when": "view == intl-peek.progress && viewItem == missingKey",
+					"group": "inline"
+				}
+			]
+		},
 		"views": {
 			"explorer": [{ "id": "intl-peek.progress", "name": "Translations", "when": "intl-peek.hasLocales" }]
 		},
