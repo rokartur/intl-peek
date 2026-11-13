@@ -82,7 +82,9 @@ export function flag(locale: string) {
 export function languageName(locale: string) {
 	const tag = locale.replaceAll('_', '-')
 	try {
-		const name = new Intl.DisplayNames([tag], { type: 'language', languageDisplay: 'standard' }).of(tag) ?? locale
+		// `style: 'short'` gives "English (US)" in both V8 and JavaScriptCore; the default differs between their ICU data.
+		const names = new Intl.DisplayNames([tag], { type: 'language', languageDisplay: 'standard', style: 'short' })
+		const name = names.of(tag) ?? locale
 		return name.charAt(0).toLocaleUpperCase(tag) + name.slice(1)
 	} catch {
 		return locale
