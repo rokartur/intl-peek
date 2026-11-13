@@ -2,7 +2,7 @@
 	"name": "intl-peek",
 	"displayName": "Intl Peek",
 	"description": "Tiny, zero-dependency inline translations, hover, go-to-definition, key completion and missing-key warnings for next-intl and use-intl.",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"publisher": "rokartur",
 	"license": "MIT",
 	"icon": "icon.png",
