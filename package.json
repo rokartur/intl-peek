@@ -1,0 +1,55 @@
+{
+	"name": "intl-peek",
+	"displayName": "Intl Peek",
+	"description": "Tiny, zero-dependency inline translations, hover, go-to-definition, key completion and missing-key warnings for next-intl and use-intl.",
+	"version": "0.1.0",
+	"publisher": "rokartur",
+	"license": "MIT",
+	"icon": "icon.png",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/rokartur/intl-peek"
+	},
+	"keywords": ["next-intl", "use-intl", "i18n", "translations", "i18n-ally"],
+	"categories": ["Other"],
+	"engines": {
+		"vscode": "^1.85.0"
+	},
+	"main": "dist/extension.js",
+	"activationEvents": [
+		"onLanguage:typescript",
+		"onLanguage:typescriptreact",
+		"onLanguage:javascript",
+		"onLanguage:javascriptreact"
+	],
+	"contributes": {
+		"views": {
+			"explorer": [{ "id": "intl-peek.progress", "name": "Translations", "when": "intl-peek.hasLocales" }]
+		},
+		"configuration": {
+			"title": "Intl Peek",
+			"properties": {
+				"intl-peek.localesPath": {
+					"type": "string",
+					"default": "",
+					"markdownDescription": "Folder with message files, relative to the workspace root. Empty: any `locales` or `messages` folder. Layouts: `<folder>/<locale>.json` or `<folder>/<locale>/<namespace>.json`."
+				},
+				"intl-peek.displayLocale": {
+					"type": "string",
+					"default": "pl",
+					"markdownDescription": "Default locale: shown inline, offered in completion and used as the base for translation progress. `pl` also matches `pl-PL` or `pl_PL`. Falls back to the first locale found."
+				}
+			}
+		}
+	},
+	"scripts": {
+		"build": "bun build src/extension.ts --target=node --format=cjs --external vscode --minify --outfile dist/extension.js",
+		"check": "tsc --noEmit && bun test",
+		"package": "bun run build && bunx @vscode/vsce package --no-dependencies"
+	},
+	"devDependencies": {
+		"@types/bun": "^1.4.4",
+		"@types/vscode": "1.85.0",
+		"typescript": "^5.9.0"
+	}
+}
