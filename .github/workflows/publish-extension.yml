@@ -1,0 +1,52 @@
+name: Release VS Code Extension
+
+on:
+  workflow_dispatch:
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    env:
+      OVSX_PAT: ${{ secrets.OVSX_PAT }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Read package version
+        id: package_version
+        run: echo "version=$(jq -r .version package.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Check and package
+        run: |
+          bun install --frozen-lockfile
+          bun run check
+          bun run package
+
+      - name: Publish to Marketplace
+        run: npx --yes @vscode/vsce@latest publish --oidc -i intl-peek-${{ steps.package_version.outputs.version }}.vsix
+
+      - name: Publish to Open VSX
+        if: env.OVSX_PAT != ''
+        run: npx --yes ovsx@latest publish intl-peek-${{ steps.package_version.outputs.version }}.vsix -p "$OVSX_PAT"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.package_version.outputs.version }}
+          name: ${{ steps.package_version.outputs.version }}
+          files: intl-peek-${{ steps.package_version.outputs.version }}.vsix
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
